@@ -186,3 +186,17 @@ void serve_static(int fd, char *filename, int filesize) {
     // mmap 을 통해 메모리에 매핑된 파일 또는 장치의 일부분을 메모리에서 해제하는 시스템 호출
     Munmap(srcp, filesize);
 }
+
+void get_filetype(char *filename, char *filetype) {
+    if (strstr(filename, ".html")) {
+        strcpy(filetype, "text/html");
+    } else if (strstr(filename, ".gif")) {
+        strcpy(filetype, "image/gif");
+    } else if (strstr(filename, ".png")) {
+        strcpy(filetype, "image/png");
+    } else if (strstr(filename, ".jpg")) {
+        strcpy(filetype, "image/jpeg");
+    } else {
+        strcpy(filetype, "text/plain");
+    }
+}
