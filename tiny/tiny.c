@@ -114,3 +114,17 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     Rio_writen(fd, buf, strlen(buf));
     Rio_writen(fd, body, strlen(body));
 }
+
+
+// request header 를 읽고 무시
+void read_requesthdrs(rio_t *rp) {
+    char buf[MAXLINE];
+
+    // todo Rio_readlineb 가 내부적으로 어떤 일을 하길래 한 번 실행하고, while 문에서 line 별로 실행하는지 파악 필요
+    Rio_readlineb(rp, buf, MAXLINE);
+    while (strcmp(buf, "\r\n")) {
+        Rio_readlineb(rp, buf, MAXLINE);
+        printf("%s", buf);
+    }
+    return;
+}
