@@ -139,7 +139,8 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
     // cgi-bin 이라는 문자열이 포함되면 동적 요청
     if (!strstr(uri, "cgi-bin")) { // -> 정적 요청
         strcpy(cgiargs, "");
-        strcpy(filename, ".");
+        // 정적 데이터들은 static/ 폴더 하위로 변경. 따라서 정적 요청인 경우 filename 앞에 static/ 을 concat
+        strcpy(filename, "./static");
         strcat(filename, uri);
         if (uri[strlen(uri) - 1] == '/') {
             strcat(filename, "home.html");
