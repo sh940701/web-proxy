@@ -71,6 +71,8 @@ void doit(int fd) {
     read_requesthdrs(&rio);
 
     // 정적 파일 API 인지, 동적 API 인지 파악
+    // html 을 받은 후, html 내부 태그에 따라서 실제로 요청을 더 보낸다 (video 혹은 img 혹은 both 의 데이터를 요구하기 위한 요청) GET /godzilla.gif 등
+    // 이 때는 html 이 아닌 다른 타입(mpg, jpg 등) 으로 filename 이 설정되어, serve_static 내부의 get_filetype 을 통해 각각 요청한 파일 타입에 맞는 header 를 return 한다.
     is_static = parse_uri(uri, filename, cgiargs);
 
     // filename 에 명시된 파일의 존재여부, 메타데이터 등을 확인하여, valid 한 값이라면 sbuf 에 그 파일 데이터를 채워줌
@@ -202,6 +204,8 @@ void get_filetype(char *filename, char *filetype) {
         strcpy(filetype, "image/png");
     } else if (strstr(filename, ".jpg")) {
         strcpy(filetype, "image/jpeg");
+    } else if (strstr(filename, ".mpg")) { // 11.7: mpg 타입을 위한 분류 추가
+        strcpy(filetype, "video/mpeg");
     } else {
         strcpy(filetype, "text/plain");
     }
