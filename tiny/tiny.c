@@ -57,7 +57,7 @@ void doit(int fd) {
     // Read request line and headers
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
-    printf("Request headers:\n");
+    printf("Server Request headers:\n");
     printf("%s", buf);
     // 11.6 - c
     // GET /cgi-bin/adder?130&19 HTTP/1.1
