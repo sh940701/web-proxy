@@ -5,7 +5,7 @@
 #include "../csapp.h"
 
 int main(void) {
-    char *buf, *p;
+    char *buf, *p, *method;
     char arg1[MAXLINE], arg2[MAXLINE], content[MAXLINE];
     int n1 = 0, n2 = 0;
 
@@ -42,6 +42,12 @@ int main(void) {
     printf("Connection: close\r\n");
     printf("Content-length: %d\r\n", (int) strlen(content));
     printf("Content-type: text/html\r\n\r\n"); // HTTP header 와 body 사이에는 두 줄이 비워져있어야 함
+    // method 가 HEAD 이면 header 만 보내고 exit
+    method = getenv("METHOD");
+    if (!strcasecmp(method, "HEAD")) {
+        fflush(stdout);
+        exit(0);
+    }
     printf("%s", content);
 
     // fflush 는 출력 스트림의 버퍼를 강제로 비우는 역할을 한다.

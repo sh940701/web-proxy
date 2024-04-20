@@ -14,11 +14,11 @@ void read_requesthdrs(rio_t *rp);
 
 int parse_uri(char *uri, char *filename, char *cgiargs);
 
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize, char *method);
 
 void get_filetype(char *filename, char *filetype);
 
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
@@ -64,7 +64,9 @@ void doit(int fd) {
     // buf 에 method, uri, version 값이 위와 같이 담긴다.
     // 이를 통해 현재 browser 에서 사용하는 HTTP version 이 1.1 이라는 것을 알 수 있다.
     sscanf(buf, "%s %s %s", method, uri, version); // buf 에서 세 개의 문자열을 받아서 method, uri, version 변수에 저장하는 함수
-    if (strcasecmp(method, "GET")) { // 대소문자 구분없이 문자열을 비교하는 함수. 두 값이 같으면 0을 반환하기 때문에 method == get/GET 인 경우 통과한다.
+    // 11-11
+    if (strcasecmp(method, "GET") &&
+        (strcasecmp(method, "HEAD"))) { // 대소문자 구분없이 문자열을 비교하는 함수. 두 값이 같으면 0을 반환하기 때문에 method == get/GET 인 경우 통과한다.
         clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
         return;
     }
@@ -88,7 +90,7 @@ void doit(int fd) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
             return;
         }
-        serve_static(fd, filename, sbuf.st_size);
+        serve_static(fd, filename, sbuf.st_size, method);
     }
         // dynamic content handling
     else {
@@ -97,7 +99,7 @@ void doit(int fd) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
             return;
         }
-        serve_dynamic(fd, filename, cgiargs);
+        serve_dynamic(fd, filename, cgiargs, method);
     }
 }
 
@@ -196,7 +198,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 //}
 
 // 11-9
-void serve_static(int fd, char *filename, int filesize) {
+void serve_static(int fd, char *filename, int filesize, char *method) {
     int srcfd;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
@@ -210,6 +212,10 @@ void serve_static(int fd, char *filename, int filesize) {
     Rio_writen(fd, buf, strlen(buf));
     printf("Response headers: \n");
     printf("%s", buf);
+    // 만약 method 가 HEAD 라면 header 만 보내고 return
+    if (!strcasecmp(method, "HEAD")) {
+        return;
+    }
 
     // 파일을 열어서 file descriptor 를 만들어줌
     srcfd = Open(filename, O_RDONLY, 0);
@@ -246,7 +252,7 @@ void get_filetype(char *filename, char *filetype) {
     }
 }
 
-void serve_dynamic(int fd, char *filename, char *cgiargs) {
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method) {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     // response header 의 첫 부분 return
@@ -257,6 +263,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs) {
 
     if (Fork() == 0) {
         setenv("QUERY_STRING", cgiargs, 1);
+        setenv("METHOD", method, 1);
         Dup2(fd, STDOUT_FILENO);
         Execve(filename, emptylist, environ);
     }
