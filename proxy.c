@@ -6,6 +6,7 @@
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
+#define SERVER_HOST "127.0.0.1"
 #define SERVER_PORT 8080
 /* Misc constants */
 #define    MAXLINE     8192  /* Max text line length */
