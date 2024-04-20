@@ -22,7 +22,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
-// 실행 arg 로 port number, listen socket fd 입력
+// 실행 arg 로 port number 입력
 int main(int argc, char **argv) {
     int listenfd, connfd;
     char hostname[MAXLINE], port[MAXLINE];
@@ -187,8 +187,8 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 //    // Mmap: 파일이나 장치의 일부 혹은 전체를 메모리에 매핑하는 시스템 호출
 //    // srcfd 에 의해 참조된 파일을 프로세스의 주소 공간에 매핑한다.
 //    // 0: 시작주소, filesize: 파일 크기, PROT_READ: 매핑된 메모리 영역에 대한 보호 수준(READ_ONLY)
-//    // MAP_PRIVATE: 매핑의 종류 - 쓰기 시 복사(매핑된 메모리에 대한 변경사항이 실제 파일에 반영되지 않고, 해당 프로세스에만 영향을 미침
-//    // srcfd: 매핑할 파일의 파일 디스크립터, 0: 파일 내에서 매핑을 시작할 오프셋, ㅣ 경우 파일의 시작부터 매핑을 시작함.
+//    // MAP_PRIVATE: 매핑의 종류 - 쓰기 시 복사(매핑된 메모리에 대한 변경사항이 실제 파일에 반영되지 않고, 해당 프로세스에만 영향을 미침)
+//    // srcfd: 매핑할 파일의 파일 디스크립터, 0: 파일 내에서 매핑을 시작할 오프셋, 이 경우 파일의 시작부터 매핑을 시작함.
 //    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
 //    // 파일을 srcp 에 복사했으므로, file descriptor 는 닫아준다.
 //    Close(srcfd);
