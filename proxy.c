@@ -42,3 +42,46 @@ int main(int argc, char **argv) {
         Close(connfd);
     }
 }
+
+void deliver(int connfd) {
+    char buf[MAXLINE], method[MAXLINE], path[MAXLINE], *received_data[MAXBUF];
+    struct sockaddr_in servaddr;
+    int clientfd;
+    rio_t rio;
+
+    Rio_readinitb(&rio, connfd);
+    Rio_readlineb(&rio, buf, MAXLINE);
+//    printf("Proxy Request headers:\n");
+//    printf("%s", buf);
+
+    // browser 에서 요청을 보낼 때, 실제로는 host 와 uri 를 따로 보낸다: http://localhost/index.html X -> /index.html
+    // 따라서 path 만 포함하기 위해 따로 구현해 줄 사항이 없다.
+    sscanf(buf, "%s %s", method, path);
+
+    // proxy_client socket 생성 및 verification
+    clientfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (clientfd == -1) {
+        printf("socket creation failed...\n");
+        return;
+    }
+
+    // servaddr 구조체 초기화
+    memset(&servaddr, 0, sizeof(servaddr));
+    // assign IP, PORT
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = inet_addr(SERVER_HOST);
+    servaddr.sin_port = htons(SERVER_PORT); // network byte 순서를 big endian 순서로 하기 위한 htons 함수
+
+    // client - server connect
+    if (connect(clientfd, (SA *) &servaddr, sizeof(servaddr)) != 0) {
+        printf("connection with the server failed...\n");
+        return;
+    }
+
+    // 서버로 요청 전송 및 응답 데이터 저장
+    request_to_server(clientfd);
+
+
+    // 요청 및 데이터 전달 완료 후 clientfd close
+    close(clientfd);
+}
