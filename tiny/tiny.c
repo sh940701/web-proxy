@@ -59,6 +59,10 @@ void doit(int fd) {
     Rio_readlineb(&rio, buf, MAXLINE);
     printf("Request headers:\n");
     printf("%s", buf);
+    // 11.6 - c
+    // GET /cgi-bin/adder?130&19 HTTP/1.1
+    // buf 에 method, uri, version 값이 위와 같이 담긴다.
+    // 이를 통해 현재 browser 에서 사용하는 HTTP version 이 1.1 이라는 것을 알 수 있다.
     sscanf(buf, "%s %s %s", method, uri, version); // buf 에서 세 개의 문자열을 받아서 method, uri, version 변수에 저장하는 함수
     if (strcasecmp(method, "GET")) { // 대소문자 구분없이 문자열을 비교하는 함수. 두 값이 같으면 0을 반환하기 때문에 method == get/GET 인 경우 통과한다.
         clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
