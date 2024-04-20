@@ -163,6 +163,39 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 }
 
 // 이 함수를 호출하는 시점에는, 아직 파일을 가상메모리에 올리기 전이다.
+//void serve_static(int fd, char *filename, int filesize) {
+//    int srcfd;
+//    char *srcp, filetype[MAXLINE], buf[MAXBUF];
+//
+//    // response header 전송
+//    get_filetype(filename, filetype); // 파일 타입 확인
+//    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+//    sprintf(buf, "%sServer: Tiny Web server \r\n", buf);
+//    sprintf(buf, "%sConnection: close\r\n", buf);
+//    sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+//    sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+//    Rio_writen(fd, buf, strlen(buf));
+//    printf("Response headers: \n");
+//    printf("%s", buf);
+//
+//    // response body 전송
+//    // 파일 이름을 가지고 파일을 연다. 이 때 flag 로 읽기 권한을 부여하고, 읽기 권한 부여시 mode 는 중요하지 않기 때문에 0 으로 설정해준다.
+//    // 파일 열기에 성공시 file descriptor 를 반환한다. file descriptor 는 운영체제가 어떤 열려있는 파일을 가리킬 수 있는 추상화된 정수값의 데이터이다.
+//    srcfd = Open(filename, O_RDONLY, 0);
+//    // Mmap: 파일이나 장치의 일부 혹은 전체를 메모리에 매핑하는 시스템 호출
+//    // srcfd 에 의해 참조된 파일을 프로세스의 주소 공간에 매핑한다.
+//    // 0: 시작주소, filesize: 파일 크기, PROT_READ: 매핑된 메모리 영역에 대한 보호 수준(READ_ONLY)
+//    // MAP_PRIVATE: 매핑의 종류 - 쓰기 시 복사(매핑된 메모리에 대한 변경사항이 실제 파일에 반영되지 않고, 해당 프로세스에만 영향을 미침
+//    // srcfd: 매핑할 파일의 파일 디스크립터, 0: 파일 내에서 매핑을 시작할 오프셋, ㅣ 경우 파일의 시작부터 매핑을 시작함.
+//    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+//    // 파일을 srcp 에 복사했으므로, file descriptor 는 닫아준다.
+//    Close(srcfd);
+//    Rio_writen(fd, srcp, filesize);
+//    // mmap 을 통해 메모리에 매핑된 파일 또는 장치의 일부분을 메모리에서 해제하는 시스템 호출
+//    Munmap(srcp, filesize);
+//}
+
+// 11-9
 void serve_static(int fd, char *filename, int filesize) {
     int srcfd;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
@@ -178,21 +211,23 @@ void serve_static(int fd, char *filename, int filesize) {
     printf("Response headers: \n");
     printf("%s", buf);
 
-    // response body 전송
-    // 파일 이름을 가지고 파일을 연다. 이 때 flag 로 읽기 권한을 부여하고, 읽기 권한 부여시 mode 는 중요하지 않기 때문에 0 으로 설정해준다.
-    // 파일 열기에 성공시 file descriptor 를 반환한다. file descriptor 는 운영체제가 어떤 열려있는 파일을 가리킬 수 있는 추상화된 정수값의 데이터이다.
+    // 파일을 열어서 file descriptor 를 만들어줌
     srcfd = Open(filename, O_RDONLY, 0);
-    // Mmap: 파일이나 장치의 일부 혹은 전체를 메모리에 매핑하는 시스템 호출
-    // srcfd 에 의해 참조된 파일을 프로세스의 주소 공간에 매핑한다.
-    // 0: 시작주소, filesize: 파일 크기, PROT_READ: 매핑된 메모리 영역에 대한 보호 수준(READ_ONLY)
-    // MAP_PRIVATE: 매핑의 종류 - 쓰기 시 복사(매핑된 메모리에 대한 변경사항이 실제 파일에 반영되지 않고, 해당 프로세스에만 영향을 미침
-    // srcfd: 매핑할 파일의 파일 디스크립터, 0: 파일 내에서 매핑을 시작할 오프셋, ㅣ 경우 파일의 시작부터 매핑을 시작함.
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-    // 파일을 srcp 에 복사했으므로, file descriptor 는 닫아준다.
-    Close(srcfd);
+
+    // 열어놓은 파일을 복사할 buffer 를 만들어줌 (동적 할당)
+    srcp = (char *) malloc(filesize);
+
+    // 파일을 fd 로부터 buffer 로 filesize 만큼 복사(read)
+    Rio_readn(srcfd, srcp, filesize);
+
+    // 파일을 buffer 로 부터 fd(client 로 향하는 파일 디스크립터) 로 filesize 만큼 복사 (write)
     Rio_writen(fd, srcp, filesize);
-    // mmap 을 통해 메모리에 매핑된 파일 또는 장치의 일부분을 메모리에서 해제하는 시스템 호출
-    Munmap(srcp, filesize);
+
+    // 정적 파일 디스크립터 close
+    Close(srcfd);
+
+    // 사용한 buffer free
+    free(srcp);
 }
 
 void get_filetype(char *filename, char *filetype) {
