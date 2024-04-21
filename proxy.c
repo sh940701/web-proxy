@@ -8,6 +8,7 @@
 #define MAX_OBJECT_SIZE 102400
 #define SERVER_HOST "127.0.0.1"
 #define SERVER_PORT 8080
+#define STATIC_HTTP_VER "HTTP/1.0"
 /* Misc constants */
 #define    MAXLINE     8192  /* Max text line length */
 #define MAXBUF   8192  /* Max I/O buffer size */
