@@ -23,7 +23,9 @@ void deliver(int);
 
 void request_to_server(int, char *, int);
 
-void generate_header(char *, char *, char *, rio_t *);
+void generate_header(char *, char *, char *, char *, rio_t *);
+
+void parse_uri(char *uri, char *hostname, char *port, char *filename);
 
 int main(int argc, char **argv) {
     int listenfd, connfd;
@@ -37,7 +39,6 @@ int main(int argc, char **argv) {
     }
 
     listenfd = Open_listenfd(argv[1]);
-
     while (1) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
@@ -49,7 +50,9 @@ int main(int argc, char **argv) {
 }
 
 void deliver(int connfd) {
-    char buf[MAXLINE], method[MAXLINE], path[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
+    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE];
+
     struct sockaddr_in servaddr;
     int clientfd;
     rio_t rio;
@@ -57,9 +60,15 @@ void deliver(int connfd) {
     Rio_readinitb(&rio, connfd);
     Rio_readlineb(&rio, buf, MAXLINE);
 
+    printf("Request headers:\n");
+    printf("%s", buf);
+
+
     // browser 에서 요청을 보낼 때, 실제로는 host 와 uri 를 따로 보낸다: http://localhost/index.html X -> /index.html
     // 따라서 path 만 포함하기 위해 따로 구현해 줄 사항이 없다.
-    sscanf(buf, "%s %s %s", method, path, version);
+    sscanf(buf, "%s %s %s", method, uri, version);
+
+    parse_uri(uri, hostname, port, filename);
 
     // proxy_client socket 생성 및 verification
     clientfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -68,12 +77,20 @@ void deliver(int connfd) {
         return;
     }
 
+    generate_header(data_buf, method, hostname, filename, &rio);
+
+    // localhost 는 127.0.0.1 로 변경
+    if (strcmp(hostname, "localhost") == 0) {
+        strcpy(hostname, SERVER_HOST);
+    }
+
     // servaddr 구조체 초기화
     memset(&servaddr, 0, sizeof(servaddr));
+
     // assign IP, PORT
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(SERVER_HOST);
-    servaddr.sin_port = htons(SERVER_PORT); // network byte 순서를 big endian 순서로 하기 위한 htons 함수
+    servaddr.sin_addr.s_addr = inet_addr(hostname);
+    servaddr.sin_port = htons(atoi(port)); // network byte 순서를 big endian 순서로 하기 위한 htons 함수
 
     // client - server connect
     if (connect(clientfd, (SA *) &servaddr, sizeof(servaddr)) != 0) {
@@ -81,7 +98,7 @@ void deliver(int connfd) {
         return;
     }
 
-    generate_header(data_buf, method, path, &rio);
+    printf("%s", data_buf);
 
     // 서버로 요청 전송 및 응답 데이터 저장
     request_to_server(clientfd, data_buf, connfd);
@@ -94,23 +111,32 @@ void deliver(int connfd) {
 }
 
 // header 를 만들어주는 generate_header 함수
-void generate_header(char *buf, char *method, char *path, rio_t *rp) {
+void generate_header(char *buf, char *method, char *hostname, char *filename, rio_t *rp) {
     char tmp_buf[MAXLINE];
 
     memset(tmp_buf, 0, MAXLINE);
 
-    sprintf(buf, "%s %s %s\r\n", method, path, STATIC_HTTP_VER);
+    sprintf(buf, "%s %s %s\r\n", method, filename, STATIC_HTTP_VER);
     sprintf(buf, "%s%s\r\n", buf, user_agent_hdr);
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sProxy-Connection: close\r\n", buf);
+
+    int host_flag = 0;
 
     while (strcmp(tmp_buf, "\r\n")) {
         Rio_readlineb(rp, tmp_buf, MAXLINE);
         if (strcasestr(tmp_buf, "GET") || strcasestr(tmp_buf, "HEAD") || strcasestr(tmp_buf, "User-Agent") ||
             strcasestr(tmp_buf, "Connection") || strcasestr(tmp_buf, "Proxy-Connection")) {
             continue;
+        } else if (strcasestr(tmp_buf, "HOST: ")) {
+            host_flag++;
         }
         strcat(buf, tmp_buf);
+    }
+
+    // 호스트가 없으면 hostname 을 추가해줌
+    if (!host_flag) {
+        sprintf(buf, "%sHost: %s", buf, hostname);
     }
 
     strcat(buf, "\r\n");
@@ -130,5 +156,39 @@ void request_to_server(int clientfd, char *buf, int connfd) {
 
     if (n < 0) {
         // todo read error
+    }
+}
+
+//URI 예시 http://127.0.0.1:8000/htmls/index.html
+void parse_uri(char *uri, char *hostname, char *port, char *filename) {
+    char *p;
+    char arg1[MAXLINE], arg2[MAXLINE];
+
+    if (p = strchr(uri, '/')) //문자열 uri 내에 일치하는 문자 '/' 가 있는지 검사하는 함수. 있으면 '/'를 가리키는 포인터 리턴
+    { // http:   여기가 p-->//127.0.0.1:8000/htmls/index.html
+        sscanf(p + 2, "%s", arg1); // 위에서 p+2 하면 127...부터 읽어와 arg1에 저장 => ex)127.0.0.1:8000/htmls/index.html
+    } else {
+        strcpy(arg1, uri); //문자열 내에 '/' 가 없으면 uri전체를 arg1에 저장 (무조건 들어오긴함)
+    }
+
+    if (p = strchr(arg1, ':')) { //문자열 uri 내에 일치하는 문자 ':' (포트번호) 가 있는지 검사하는 함수. 있으면 ':'를 가리키는 포인터 리턴
+        // 127.0.0.1   여기가 p-->:8000/htmls/index.html
+        *p = '\0'; // :를 \0으로 바꿈 -> arg1은 이제 127.0.0.1 이 됨
+        sscanf(arg1, "%s", hostname); // arg1을 hostname에 저장  => hostname 은 127.0.0.1
+        sscanf(p + 1, "%s", arg2); //포트(와 그 뒤)를 arg2에 저장 => arg2 는 8000/htmls/index.html
+
+        p = strchr(arg2, '/'); //arg2 즉 포트 뒤에 '/'가 있다면 '/'를 가리키는 포인터를 p에 저장 => 8000  여기-->/  htmls/index.html
+        *p = '\0'; // /를 \0으로 바꿈 --> arg2는 이제 8000이 됨
+        sscanf(arg2, "%s", port); //port에 8000 을 저장함
+        *p = '/'; // 여기가 p-->/htmls/index.html
+        sscanf(p, "%s", filename); //filename은 /htmls/index.html 가 됨.
+
+    } else { //문자열 uri 내에 포트번호가 없다면 ex) uri가 http://127.0.0.1/htmls/index.html 라면 160~167줄을 통해 arg1은 127.0.0.1/htmls/index.html
+        p = strchr(arg1, '/'); //  127.0.0.1  여기가 p-->/htmls/index.html
+        *p = '\0'; //arg1에서 '/' 를 없애고 => 127.0.0.1 \0 htmls/index.html => arg1은 127.0.0.1 이 됨
+        sscanf(arg1, "%s", hostname); //ag1을 hostname에 저장. hostname 은 127.0.0.1
+        *p = '/';
+        sscanf(p, "%s", filename); // filename은 /htmls/index.html 가 됨.
+
     }
 }
