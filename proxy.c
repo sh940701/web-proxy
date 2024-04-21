@@ -27,6 +27,17 @@ void generate_header(char *, char *, char *, char *, rio_t *);
 
 void parse_uri(char *uri, char *hostname, char *port, char *filename);
 
+void print_log(char *desc, char *text) {
+    FILE *fp = fopen("output.log", "a");
+
+    fprintf(fp, "====================%s====================\n%s", desc, text);
+
+    if (text[strlen(text) - 1] != '\n')
+        fprintf(fp, "\n");
+
+    fclose(fp);
+}
+
 int main(int argc, char **argv) {
     int listenfd, *connfd;
     char hostname[MAXLINE], port[MAXLINE];
@@ -69,6 +80,7 @@ void *deliver(void *vargp) {
 
     printf("Request headers:\n");
     printf("%s", buf);
+    print_log("\n날아온 헤더\n", buf);
 
 
     // browser 에서 요청을 보낼 때, 실제로는 host 와 uri 를 따로 보낸다: http://localhost/index.html X -> /index.html
@@ -85,6 +97,8 @@ void *deliver(void *vargp) {
     }
 
     generate_header(data_buf, method, hostname, filename, &rio);
+
+    print_log("생성된 헤더\n", data_buf);
 
     // localhost 는 127.0.0.1 로 변경
     if (strcmp(hostname, "localhost") == 0) {
@@ -136,6 +150,7 @@ void generate_header(char *buf, char *method, char *hostname, char *filename, ri
 
     while (strcmp(tmp_buf, "\r\n")) {
         Rio_readlineb(rp, tmp_buf, MAXLINE);
+        print_log("날아온 헤더들2", tmp_buf);
         if (strcasestr(tmp_buf, "GET") || strcasestr(tmp_buf, "HEAD") || strcasestr(tmp_buf, "User-Agent") ||
             strcasestr(tmp_buf, "Connection") || strcasestr(tmp_buf, "Proxy-Connection")) {
             continue;
