@@ -119,8 +119,6 @@ void *deliver(void *vargp) {
         return NULL;
     }
 
-    printf("%s", data_buf);
-
     // 서버로 요청 전송 및 응답 데이터 저장
     request_to_server(clientfd, data_buf, connfd);
 
