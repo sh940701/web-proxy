@@ -113,3 +113,20 @@ void generate_header(char *buf, char *method, char *path, rio_t *rp) {
 
     strcat(buf, "\r\n");
 }
+
+// server 로 request 를 보내는 request_to_server 함수
+void request_to_server(int clientfd, char *buf, int connfd) {
+    ssize_t n;
+
+    Rio_writen(clientfd, buf, MAXLINE);
+
+    printf("\nrequest header2 : \n%s", buf);
+
+    memset(buf, 0, MAXLINE);
+
+    Rio_readn(clientfd, buf, MAX_OBJECT_SIZE);
+
+    if (n < 0) {
+        // todo read error
+    }
+}
