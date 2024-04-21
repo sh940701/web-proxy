@@ -49,19 +49,17 @@ int main(int argc, char **argv) {
 }
 
 void deliver(int connfd) {
-    char buf[MAXLINE], method[MAXLINE], path[MAXLINE], *received_data[MAXBUF];
+    char buf[MAXLINE], method[MAXLINE], path[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
     struct sockaddr_in servaddr;
     int clientfd;
     rio_t rio;
 
     Rio_readinitb(&rio, connfd);
     Rio_readlineb(&rio, buf, MAXLINE);
-//    printf("Proxy Request headers:\n");
-//    printf("%s", buf);
 
     // browser 에서 요청을 보낼 때, 실제로는 host 와 uri 를 따로 보낸다: http://localhost/index.html X -> /index.html
     // 따라서 path 만 포함하기 위해 따로 구현해 줄 사항이 없다.
-    sscanf(buf, "%s %s", method, path);
+    sscanf(buf, "%s %s %s", method, path, version);
 
     // proxy_client socket 생성 및 verification
     clientfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -83,12 +81,16 @@ void deliver(int connfd) {
         return;
     }
 
-    // 서버로 요청 전송 및 응답 데이터 저장
-    request_to_server(clientfd);
+    generate_header(data_buf, method, path, &rio);
 
+    // 서버로 요청 전송 및 응답 데이터 저장
+    request_to_server(clientfd, data_buf, connfd);
+
+    // 서버로부터 받은 data 를 client 에 전송
+    Rio_writen(connfd, data_buf, MAX_OBJECT_SIZE);
 
     // 요청 및 데이터 전달 완료 후 clientfd close
-    close(clientfd);
+    Close(clientfd);
 }
 
 // header 를 만들어주는 generate_header 함수
