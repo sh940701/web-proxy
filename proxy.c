@@ -90,3 +90,26 @@ void deliver(int connfd) {
     // 요청 및 데이터 전달 완료 후 clientfd close
     close(clientfd);
 }
+
+// header 를 만들어주는 generate_header 함수
+void generate_header(char *buf, char *method, char *path, rio_t *rp) {
+    char tmp_buf[MAXLINE];
+
+    memset(tmp_buf, 0, MAXLINE);
+
+    sprintf(buf, "%s %s %s\r\n", method, path, STATIC_HTTP_VER);
+    sprintf(buf, "%s%s\r\n", buf, user_agent_hdr);
+    sprintf(buf, "%sConnection: close\r\n", buf);
+    sprintf(buf, "%sProxy-Connection: close\r\n", buf);
+
+    while (strcmp(tmp_buf, "\r\n")) {
+        Rio_readlineb(rp, tmp_buf, MAXLINE);
+        if (strcasestr(tmp_buf, "GET") || strcasestr(tmp_buf, "HEAD") || strcasestr(tmp_buf, "User-Agent") ||
+            strcasestr(tmp_buf, "Connection") || strcasestr(tmp_buf, "Proxy-Connection")) {
+            continue;
+        }
+        strcat(buf, tmp_buf);
+    }
+
+    strcat(buf, "\r\n");
+}
