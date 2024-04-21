@@ -148,8 +148,6 @@ void request_to_server(int clientfd, char *buf, int connfd) {
 
     Rio_writen(clientfd, buf, MAXLINE);
 
-    printf("\nrequest header2 : \n%s", buf);
-
     memset(buf, 0, MAXLINE);
 
     Rio_readn(clientfd, buf, MAX_OBJECT_SIZE);
