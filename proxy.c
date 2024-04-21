@@ -16,9 +16,13 @@
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
-        "Firefox/10.0.3\r\n";
+        "Firefox/10.0.3";
 
-void deliver(int fd);
+void deliver(int);
+
+void request_to_server(int, char *, int);
+
+void generate_header(char *, char *, char *, rio_t *);
 
 int main(int argc, char **argv) {
     int listenfd, connfd;
