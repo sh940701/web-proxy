@@ -19,7 +19,7 @@ static const char *user_agent_hdr =
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
         "Firefox/10.0.3";
 
-void deliver(int);
+void *deliver(void *vargv);
 
 void request_to_server(int, char *, int);
 
@@ -28,10 +28,11 @@ void generate_header(char *, char *, char *, char *, rio_t *);
 void parse_uri(char *uri, char *hostname, char *port, char *filename);
 
 int main(int argc, char **argv) {
-    int listenfd, connfd;
+    int listenfd, *connfd;
     char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
+    pthread_t tid;
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s <port\n", argv[0]);
@@ -41,14 +42,21 @@ int main(int argc, char **argv) {
     listenfd = Open_listenfd(argv[1]);
     while (1) {
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
+        connfd = malloc(sizeof(int));
+
+        *connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
+
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        deliver(connfd);
+
+        pthread_create(&tid, NULL, deliver, connfd);
     }
 }
 
-void deliver(int connfd) {
+void *deliver(void *vargp) {
+    int connfd = *((int *) vargp);
+    pthread_detach(pthread_self());
+
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
     char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE];
 
@@ -73,7 +81,7 @@ void deliver(int connfd) {
     clientfd = socket(AF_INET, SOCK_STREAM, 0);
     if (clientfd == -1) {
         printf("socket creation failed...\n");
-        return;
+        return NULL;
     }
 
     generate_header(data_buf, method, hostname, filename, &rio);
@@ -94,7 +102,7 @@ void deliver(int connfd) {
     // client - server connect
     if (connect(clientfd, (SA *) &servaddr, sizeof(servaddr)) != 0) {
         printf("connection with the server failed...\n");
-        return;
+        return NULL;
     }
 
     printf("%s", data_buf);
@@ -105,9 +113,12 @@ void deliver(int connfd) {
     // 서버로부터 받은 data 를 client 에 전송
     Rio_writen(connfd, data_buf, MAX_OBJECT_SIZE);
 
+    free(vargp);
     // 요청 및 데이터 전달 완료 후 clientfd, connfd close
     Close(clientfd);
     Close(connfd);
+
+    return NULL;
 }
 
 // header 를 만들어주는 generate_header 함수
