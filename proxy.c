@@ -45,7 +45,6 @@ int main(int argc, char **argv) {
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
         deliver(connfd);
-        Close(connfd);
     }
 }
 
@@ -106,8 +105,9 @@ void deliver(int connfd) {
     // 서버로부터 받은 data 를 client 에 전송
     Rio_writen(connfd, data_buf, MAX_OBJECT_SIZE);
 
-    // 요청 및 데이터 전달 완료 후 clientfd close
+    // 요청 및 데이터 전달 완료 후 clientfd, connfd close
     Close(clientfd);
+    Close(connfd);
 }
 
 // header 를 만들어주는 generate_header 함수
