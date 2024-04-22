@@ -18,15 +18,14 @@
 typedef struct CacheItem {
     char *key;
     char *value;
-    int size;
+    ssize_t size;
     struct CacheItem *prev;
     struct CacheItem *next;
 } CacheItem;
 
 // 전체 캐시 풀
 typedef struct Cache {
-    int size;
-    int capacity;
+    ssize_t capacity;
     CacheItem *head;
     CacheItem *tail;
 } Cache;
@@ -39,13 +38,13 @@ static const char *user_agent_hdr =
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
         "Firefox/10.0.3";
 
-CacheItem *createCacheItem(char *key, char *value, int size);
+CacheItem *createCacheItem(char *key, char *value, ssize_t size);
 
 Cache *initCache(void);
 
 void removeCacheItem(Cache *cache, CacheItem *item);
 
-void put_cache(Cache *cache, char *key, char *value, int size);
+void put_cache(Cache *cache, char *key, char *value, ssize_t size);
 
 char *get_cache(Cache *cache, char *key);
 
@@ -54,7 +53,7 @@ int is_available_cache(char *data);
 
 void *deliver(void *vargv);
 
-void request_to_server(int, char *, int);
+void request_to_server(int, char *, ssize_t *);
 
 void generate_header(char *, char *, char *, char *, rio_t *);
 
@@ -105,7 +104,7 @@ void *deliver(void *vargp) {
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
     char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE], key[MAXLINE];
     char *cache_data;
-    int cache_size;
+    ssize_t cache_size;
 
     struct sockaddr_in servaddr;
     int clientfd;
@@ -174,11 +173,11 @@ void *deliver(void *vargp) {
     }
 
     // 서버로 요청 전송 및 응답 데이터 저장
-    request_to_server(clientfd, data_buf, connfd);
+    request_to_server(clientfd, data_buf, &cache_size);
 
-    cache_size = is_available_cache(data_buf);
+
     // 캐싱 가능한 대상인지 확인 후, 캐싱 가능하다면 캐시에 추가해줌
-    if (cache_size) {
+    if (0 < cache_size) {
         put_cache(cache_pool, key, data_buf, cache_size);
     }
 
@@ -227,18 +226,16 @@ void generate_header(char *buf, char *method, char *hostname, char *filename, ri
 }
 
 // server 로 request 를 보내는 request_to_server 함수
-void request_to_server(int clientfd, char *buf, int connfd) {
-    ssize_t n;
-
+void request_to_server(int clientfd, char *buf, ssize_t *data_size) {
     Rio_writen(clientfd, buf, MAXLINE);
 
     memset(buf, 0, MAXLINE);
 
-    Rio_readn(clientfd, buf, MAX_OBJECT_SIZE);
+    *data_size = Rio_readn(clientfd, buf, MAX_OBJECT_SIZE);
 
-    if (n < 0) {
-        // todo read error
-    }
+//    if (n < 0) {
+//        // todo read error
+//    }
 }
 
 void parse_uri(char *uri, char *request_ip, char *port, char *filename) {
@@ -270,10 +267,12 @@ void parse_uri(char *uri, char *request_ip, char *port, char *filename) {
 
 
 // 새로운 캐시 항목을 생성하는 함수
-CacheItem *createCacheItem(char *key, char *value, int size) {
+CacheItem *createCacheItem(char *key, char *value, ssize_t size) {
     CacheItem *newItem = (CacheItem *) malloc(sizeof(CacheItem));
+    newItem->value = (char *) malloc(size);
     newItem->key = strdup(key);
-    newItem->value = strdup(value);
+
+    memcpy(newItem->value, value, size);
     newItem->size = size;
     newItem->prev = NULL;
     newItem->next = NULL;
@@ -308,7 +307,7 @@ void removeCacheItem(Cache *cache, CacheItem *item) {
     free(item);
 }
 
-void put_cache(Cache *cache, char *key, char *value, int size) {
+void put_cache(Cache *cache, char *key, char *value, ssize_t size) {
     CacheItem *newItem = createCacheItem(key, value, size);
 
     while (cache->capacity < size) {
