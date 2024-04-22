@@ -25,7 +25,8 @@ void request_to_server(int, char *, int);
 
 void generate_header(char *, char *, char *, char *, rio_t *);
 
-void parse_uri(char *uri, char *hostname, char *port, char *filename);
+void parse_uri(char *uri, char *request_ip, char *port, char *filename);
+
 
 void print_log(char *desc, char *text) {
     FILE *fp = fopen("output.log", "a");
@@ -181,36 +182,29 @@ void request_to_server(int clientfd, char *buf, int connfd) {
     }
 }
 
-//URI 예시 http://127.0.0.1:8000/htmls/index.html
-void parse_uri(char *uri, char *hostname, char *port, char *filename) {
-    char *p;
-    char arg1[MAXLINE], arg2[MAXLINE];
-
-    if (p = strchr(uri, '/')) //문자열 uri 내에 일치하는 문자 '/' 가 있는지 검사하는 함수. 있으면 '/'를 가리키는 포인터 리턴
-    { // http:   여기가 p-->//127.0.0.1:8000/htmls/index.html
-        sscanf(p + 2, "%s", arg1); // 위에서 p+2 하면 127...부터 읽어와 arg1에 저장 => ex)127.0.0.1:8000/htmls/index.html
+void parse_uri(char *uri, char *request_ip, char *port, char *filename) {
+    /*
+    uri 파싱 조건
+    요청ip,filename,port,http_version
+    filename과 port는 있을 수도있고 없을수도있음
+    URI_examle= http://request_ip:port/path
+    http://request_ip:port
+    http://request_ip/
+    */
+    char *ip_ptr, *port_ptr, *filename_ptr;
+    ip_ptr = strstr(uri, "//") ? strstr(uri, "//") + 2 : uri + 1;
+    port_ptr = strchr(ip_ptr, ':');
+    filename_ptr = strchr(ip_ptr, '/');
+    if (filename_ptr != NULL) {
+        strcpy(filename, filename_ptr);
+        *filename_ptr = '\0';
+    } else
+        strcpy(filename, "/");
+    if (port_ptr != NULL) {
+        strcpy(port, port_ptr + 1);
+        *port_ptr = '\0';
     } else {
-        strcpy(arg1, uri); //문자열 내에 '/' 가 없으면 uri전체를 arg1에 저장 (무조건 들어오긴함)
+        strcpy(port, "80");
     }
-
-    if (p = strchr(arg1, ':')) { //문자열 uri 내에 일치하는 문자 ':' (포트번호) 가 있는지 검사하는 함수. 있으면 ':'를 가리키는 포인터 리턴
-        // 127.0.0.1   여기가 p-->:8000/htmls/index.html
-        *p = '\0'; // :를 \0으로 바꿈 -> arg1은 이제 127.0.0.1 이 됨
-        sscanf(arg1, "%s", hostname); // arg1을 hostname에 저장  => hostname 은 127.0.0.1
-        sscanf(p + 1, "%s", arg2); //포트(와 그 뒤)를 arg2에 저장 => arg2 는 8000/htmls/index.html
-
-        p = strchr(arg2, '/'); //arg2 즉 포트 뒤에 '/'가 있다면 '/'를 가리키는 포인터를 p에 저장 => 8000  여기-->/  htmls/index.html
-        *p = '\0'; // /를 \0으로 바꿈 --> arg2는 이제 8000이 됨
-        sscanf(arg2, "%s", port); //port에 8000 을 저장함
-        *p = '/'; // 여기가 p-->/htmls/index.html
-        sscanf(p, "%s", filename); //filename은 /htmls/index.html 가 됨.
-
-    } else { //문자열 uri 내에 포트번호가 없다면 ex) uri가 http://127.0.0.1/htmls/index.html 라면 160~167줄을 통해 arg1은 127.0.0.1/htmls/index.html
-        p = strchr(arg1, '/'); //  127.0.0.1  여기가 p-->/htmls/index.html
-        *p = '\0'; //arg1에서 '/' 를 없애고 => 127.0.0.1 \0 htmls/index.html => arg1은 127.0.0.1 이 됨
-        sscanf(arg1, "%s", hostname); //ag1을 hostname에 저장. hostname 은 127.0.0.1
-        *p = '/';
-        sscanf(p, "%s", filename); // filename은 /htmls/index.html 가 됨.
-
-    }
+    strcpy(request_ip, ip_ptr);
 }
