@@ -14,10 +14,43 @@
 #define MAXBUF   8192  /* Max I/O buffer size */
 #define LISTENQ  1024  /* Second argument to listen() */
 
+// 각 캐시 아이템
+typedef struct CacheItem {
+    char *key;
+    char *value;
+    int size;
+    struct CacheItem *prev;
+    struct CacheItem *next;
+} CacheItem;
+
+// 전체 캐시 풀
+typedef struct Cache {
+    int size;
+    int capacity;
+    CacheItem *head;
+    CacheItem *tail;
+} Cache;
+
+static Cache *cache_pool;
+
+
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
         "Firefox/10.0.3";
+
+CacheItem *createCacheItem(char *key, char *value, int size);
+
+Cache *initCache(void);
+
+void removeCacheItem(Cache *cache, CacheItem *item);
+
+void put_cache(Cache *cache, char *key, char *value, int size);
+
+char *get_cache(Cache *cache, char *key);
+
+int is_available_cache(char *data);
+
 
 void *deliver(void *vargv);
 
@@ -26,7 +59,6 @@ void request_to_server(int, char *, int);
 void generate_header(char *, char *, char *, char *, rio_t *);
 
 void parse_uri(char *uri, char *request_ip, char *port, char *filename);
-
 
 void print_log(char *desc, char *text) {
     FILE *fp = fopen("output.log", "a");
@@ -45,6 +77,7 @@ int main(int argc, char **argv) {
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     pthread_t tid;
+    cache_pool = initCache();
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s <port\n", argv[0]);
@@ -70,7 +103,9 @@ void *deliver(void *vargp) {
     pthread_detach(pthread_self());
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
-    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE];
+    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE], key[MAXLINE];
+    char *cache_data;
+    int cache_size;
 
     struct sockaddr_in servaddr;
     int clientfd;
@@ -99,7 +134,25 @@ void *deliver(void *vargp) {
 
     generate_header(data_buf, method, hostname, filename, &rio);
 
-    print_log("생성된 헤더\n", data_buf);
+    strcat(key, hostname);
+    strcat(key, filename);
+
+    cache_data = get_cache(cache_pool, key);
+
+    // 캐시에 있으면 그대로 반환
+    if (cache_data != NULL) {
+        Rio_writen(connfd, cache_data, MAX_OBJECT_SIZE);
+
+        printf("\n%s %s%s cache Hit! Get From cache\n", method, hostname, filename);
+
+        free(vargp);
+        // 요청 및 데이터 전달 완료 후 clientfd, connfd close
+        Close(clientfd);
+        Close(connfd);
+        return NULL;
+    }
+
+    printf("\n%s %s%s cache Miss! Get From Server\n", method, hostname, filename);
 
     // localhost 는 127.0.0.1 로 변경
     if (strcmp(hostname, "localhost") == 0) {
@@ -122,6 +175,12 @@ void *deliver(void *vargp) {
 
     // 서버로 요청 전송 및 응답 데이터 저장
     request_to_server(clientfd, data_buf, connfd);
+
+    cache_size = is_available_cache(data_buf);
+    // 캐싱 가능한 대상인지 확인 후, 캐싱 가능하다면 캐시에 추가해줌
+    if (cache_size) {
+        put_cache(cache_pool, key, data_buf, cache_size);
+    }
 
     // 서버로부터 받은 data 를 client 에 전송
     Rio_writen(connfd, data_buf, MAX_OBJECT_SIZE);
@@ -207,4 +266,104 @@ void parse_uri(char *uri, char *request_ip, char *port, char *filename) {
         strcpy(port, "80");
     }
     strcpy(request_ip, ip_ptr);
+}
+
+
+// 새로운 캐시 항목을 생성하는 함수
+CacheItem *createCacheItem(char *key, char *value, int size) {
+    CacheItem *newItem = (CacheItem *) malloc(sizeof(CacheItem));
+    newItem->key = strdup(key);
+    newItem->value = strdup(value);
+    newItem->size = size;
+    newItem->prev = NULL;
+    newItem->next = NULL;
+    return newItem;
+}
+
+// cache pool init 함수
+Cache *initCache() {
+    Cache *cache = (Cache *) malloc(sizeof(Cache));
+    cache->capacity = MAX_CACHE_SIZE;
+    cache->head = NULL;
+    cache->tail = NULL;
+    return cache;
+}
+
+// 캐시에서 특정 항목을 삭제하는 함수
+void removeCacheItem(Cache *cache, CacheItem *item) {
+    if (item->prev != NULL) {
+        item->prev->next = item->next;
+    } else {
+        cache->head = item->next;
+    }
+    if (item->next != NULL) {
+        item->next->prev = item->prev;
+    } else {
+        cache->tail = item->prev;
+    }
+
+    cache->capacity += item->size;
+    free(item->key);
+    free(item->value);
+    free(item);
+}
+
+void put_cache(Cache *cache, char *key, char *value, int size) {
+    CacheItem *newItem = createCacheItem(key, value, size);
+
+    while (cache->capacity < size) {
+        removeCacheItem(cache, cache->tail);
+    }
+
+    newItem->next = cache->head;
+    if (cache->head != NULL) {
+        cache->head->prev = newItem;
+    }
+    cache->head = newItem;
+    if (cache->tail == NULL) {
+        cache->tail = newItem;
+    }
+
+    cache->capacity -= size;
+}
+
+// 캐시에서 특정 항목을 가져오는 함수
+char *get_cache(Cache *cache, char *key) {
+    CacheItem *curr = cache->head;
+
+    while (curr != NULL) {
+        if (strcmp(curr->key, key) == 0) {
+            // 해당 항목을 가장 최근에 사용했으므로, head 로 옮겨줌
+            if (curr != cache->head) {
+                curr->prev->next = curr->next;
+                if (curr->next != NULL) {
+                    curr->next->prev = curr->prev;
+                } else {
+                    cache->tail = curr->prev;
+                }
+                curr->next = cache->head;
+                curr->prev = NULL;
+                cache->head->prev = curr;
+                cache->head = curr;
+            }
+            return curr->value;
+        }
+        curr = curr->next;
+    }
+
+    return NULL;
+}
+
+int is_available_cache(char *data) {
+    char *content_length_start = strcasestr(data, "Content-Length: "); // "Content-Length: " 문자열 찾기
+    // "Content-Length: " 다음의 문자열에서 숫자를 읽어옴
+    int content_length;
+    sscanf(content_length_start + strlen("Content-Length: "), "%d", &content_length);
+
+    // content_length와 MAX_OBJECT_SIZE를 비교하여 캐시의 크기 제한을 확인
+    if (content_length <= MAX_OBJECT_SIZE) {
+        return content_length;
+    } else {
+        return 0;
+    }
 }
