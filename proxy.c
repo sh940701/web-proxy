@@ -30,6 +30,7 @@ typedef struct Cache {
     CacheItem *tail;
 } Cache;
 
+// cache_pool 생성
 static Cache *cache_pool;
 
 
@@ -50,6 +51,7 @@ char *get_cache(Cache *cache, char *key);
 
 int is_available_cache(char *data);
 
+void *context_free(void *vargp, int clientfd, int connfd);
 
 void *deliver(void *vargv);
 
@@ -58,17 +60,6 @@ void request_to_server(int, char *, ssize_t *);
 void generate_header(char *, char *, char *, char *, rio_t *, char *);
 
 void parse_uri(char *uri, char *request_ip, char *port, char *filename);
-
-void print_log(char *desc, char *text) {
-    FILE *fp = fopen("output.log", "a");
-
-    fprintf(fp, "====================%s====================\n%s", desc, text);
-
-    if (text[strlen(text) - 1] != '\n')
-        fprintf(fp, "\n");
-
-    fclose(fp);
-}
 
 int main(int argc, char **argv) {
     int listenfd, *connfd;
@@ -102,7 +93,7 @@ void *deliver(void *vargp) {
     pthread_detach(pthread_self());
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
-    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE], key[MAXLINE], head_header[MAXLINE];
+    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE], key[MAXLINE], head_header[MAXLINE], server_header[MAXLINE];
     char *cache_data;
     ssize_t cache_size;
 
@@ -115,7 +106,6 @@ void *deliver(void *vargp) {
 
     printf("Request headers:\n");
     printf("%s", buf);
-    print_log("\n날아온 헤더\n", buf);
 
 
     // browser 에서 요청을 보낼 때, 실제로는 host 와 uri 를 따로 보낸다: http://localhost/index.html X -> /index.html
@@ -131,10 +121,12 @@ void *deliver(void *vargp) {
         return NULL;
     }
 
+    // generate_header 에서는 GET 요청을 위한 헤더와 HEAD 요청을 위한 헤더를 생성함
     generate_header(data_buf, method, hostname, filename, &rio, head_header);
 
     strcat(key, hostname);
     strcat(key, filename);
+
 
     cache_data = get_cache(cache_pool, key);
 
@@ -144,13 +136,21 @@ void *deliver(void *vargp) {
 
         printf("\n%s %s%s cache Hit! Get From cache\n", method, hostname, filename);
 
-        free(vargp);
-        // 요청 및 데이터 전달 완료 후 clientfd, connfd close
-        Close(clientfd);
-        Close(connfd);
-        return NULL;
+        // 요청 및 데이터 전달 완료 후 clientfd/connfd close, 동적할당 된 vargp free
+        return context_free(vargp, clientfd, connfd);
     }
+    // ================= 캐시에 값이 있다면, 위에서 로직 종료 =================
 
+
+
+
+
+    // ================= 캐시에 값이 없는 경우, 아래 코드를 실행하며 서버로부터 데이터 GET, 캐싱 로직 진행 =================
+
+
+
+
+    // 캐시에 값이 없다면, 서버로부터 데이터를 불러옴
     printf("\n%s %s%s cache Miss! Get From Server\n", method, hostname, filename);
 
     // localhost 는 127.0.0.1 로 변경
@@ -166,30 +166,32 @@ void *deliver(void *vargp) {
     servaddr.sin_addr.s_addr = inet_addr(hostname);
     servaddr.sin_port = htons(atoi(port)); // network byte 순서를 big endian 순서로 하기 위한 htons 함수
 
-    // client - server connect
+
+    // 1. server 와 connection 생성
     if (connect(clientfd, (SA *) &servaddr, sizeof(servaddr)) != 0) {
         printf("connection with the server failed...\n");
         return NULL;
     }
 
 
-    char server_header[MAXLINE];
+    // 2. server 에 HEAD 요청 전송
+    // 이 때 HEAD 요청을 전송하는 이유는, 지금 불러오고자 하는 데이터가 캐싱 가능한 크기인지 content-length 를 통해서 확인하고자 함이다.
     Rio_writen(clientfd, head_header, MAXLINE);
-
     Rio_readn(clientfd, server_header, MAX_OBJECT_SIZE);
-
     Close(clientfd);
 
-    clientfd = socket(AF_INET, SOCK_STREAM, 0);
 
+    // 3. HTTP 특성상 방금 전 HEAD 요청으로 인해 서버와의 connection 이 종료되었으므로, 다시 연결 생성
+    clientfd = socket(AF_INET, SOCK_STREAM, 0);
     if (connect(clientfd, (SA *) &servaddr, sizeof(servaddr)) != 0) {
         printf("connection with the server failed...\n");
         return NULL;
     }
 
+
+    // 4-1. 캐시 불가능한 파일이라면, 용량이 큰 파일이라는 의미이므로, while 문을 사용해서 server 로 부터 받은 데이터를 그대로 client 로 지속적 전달해줌
     if (is_available_cache(server_header) == 0) {
         printf("\n %s cache unavailable\n ", server_header);
-
 
         Rio_writen(clientfd, data_buf, MAXLINE);
 
@@ -200,30 +202,35 @@ void *deliver(void *vargp) {
             memset(data_buf, 0, MAXLINE);
         }
 
-        free(vargp);
-        // 요청 및 데이터 전달 완료 후 clientfd, connfd close
-        Close(clientfd);
-        Close(connfd);
-
-        return NULL;
+        // 요청 및 데이터 전달 완료 후 clientfd/connfd close, 동적할당 된 vargp free
+        return context_free(vargp, clientfd, connfd);
     }
 
+
+    // 4-2 캐시 가능한 파일이라면, 아래에서 캐시를 위한 로직을 실행해 줌
     // 서버로 요청 전송 및 응답 데이터 저장
     request_to_server(clientfd, data_buf, &cache_size);
 
-    // 제대로 된 데이터가 들어왔는지 확인
+    // 5. 제대로 된 데이터가 들어왔는지 확인
     if (0 < cache_size) {
+        // 데이터가 제대로 들어왔다면, cache 삽입
         put_cache(cache_pool, key, data_buf, cache_size);
     }
 
-    // 서버로부터 받은 data 를 client 에 전송
+
+    // 6. 캐시를 마치고, 서버로부터 받은 data 를 client 에 전송
     Rio_writen(connfd, data_buf, MAX_OBJECT_SIZE);
 
+
+    // 요청 및 데이터 전달 완료 후 clientfd/connfd close, 동적할당 된 vargp free
+    return context_free(vargp, clientfd, connfd);
+}
+
+// 실행 컨텍스트를 마무리해주는 함수
+void *context_free(void *vargp, int clientfd, int connfd) {
     free(vargp);
-    // 요청 및 데이터 전달 완료 후 clientfd, connfd close
     Close(clientfd);
     Close(connfd);
-
     return NULL;
 }
 
@@ -276,10 +283,6 @@ void request_to_server(int clientfd, char *buf, ssize_t *data_size) {
     memset(buf, 0, MAXLINE);
 
     *data_size = Rio_readn(clientfd, buf, MAX_OBJECT_SIZE);
-
-//    if (n < 0) {
-//        // todo read error
-//    }
 }
 
 void parse_uri(char *uri, char *request_ip, char *port, char *filename) {
@@ -310,7 +313,7 @@ void parse_uri(char *uri, char *request_ip, char *port, char *filename) {
 }
 
 
-// 새로운 캐시 항목을 생성하는 함수
+// 새로운 cache 를 생성하는 함수
 CacheItem *createCacheItem(char *key, char *value, ssize_t size) {
     CacheItem *newItem = (CacheItem *) malloc(sizeof(CacheItem));
     newItem->value = (char *) malloc(size);
@@ -332,7 +335,7 @@ Cache *initCache() {
     return cache;
 }
 
-// 캐시에서 특정 항목을 삭제하는 함수
+// cache_pool 에서 특정 cache 를 삭제하는 함수
 void removeCacheItem(Cache *cache, CacheItem *item) {
     if (item->prev != NULL) {
         item->prev->next = item->next;
@@ -351,6 +354,8 @@ void removeCacheItem(Cache *cache, CacheItem *item) {
     free(item);
 }
 
+
+// cache_pool 에 cache 를 넣어주는 함수
 void put_cache(Cache *cache, char *key, char *value, ssize_t size) {
     CacheItem *newItem = createCacheItem(key, value, size);
 
@@ -370,7 +375,8 @@ void put_cache(Cache *cache, char *key, char *value, ssize_t size) {
     cache->capacity -= size;
 }
 
-// 캐시에서 특정 항목을 가져오는 함수
+
+// cache_pool 에서 특정 cache 를 가져오는 함수
 char *get_cache(Cache *cache, char *key) {
     CacheItem *curr = cache->head;
 
@@ -397,6 +403,8 @@ char *get_cache(Cache *cache, char *key) {
     return NULL;
 }
 
+
+// header 에서 content-length: 를 읽어서, 캐싱 가능한 데이터인지 확인해주는 함수
 int is_available_cache(char *data) {
     char *content_length_start = strcasestr(data, "Content-Length: "); // "Content-Length: " 문자열 찾기
     // "Content-Length: " 다음의 문자열에서 숫자를 읽어옴
