@@ -55,7 +55,7 @@ void *deliver(void *vargv);
 
 void request_to_server(int, char *, ssize_t *);
 
-void generate_header(char *, char *, char *, char *, rio_t *);
+void generate_header(char *, char *, char *, char *, rio_t *, char *);
 
 void parse_uri(char *uri, char *request_ip, char *port, char *filename);
 
@@ -102,7 +102,7 @@ void *deliver(void *vargp) {
     pthread_detach(pthread_self());
 
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], data_buf[MAX_OBJECT_SIZE], version[MAX_OBJECT_SIZE];
-    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE], key[MAXLINE];
+    char filename[MAXLINE], hostname[MAXLINE], port[MAXLINE], key[MAXLINE], head_header[MAXLINE];
     char *cache_data;
     ssize_t cache_size;
 
@@ -131,7 +131,7 @@ void *deliver(void *vargp) {
         return NULL;
     }
 
-    generate_header(data_buf, method, hostname, filename, &rio);
+    generate_header(data_buf, method, hostname, filename, &rio, head_header);
 
     strcat(key, hostname);
     strcat(key, filename);
@@ -172,11 +172,46 @@ void *deliver(void *vargp) {
         return NULL;
     }
 
+
+    char server_header[MAXLINE];
+    Rio_writen(clientfd, head_header, MAXLINE);
+
+    Rio_readn(clientfd, server_header, MAX_OBJECT_SIZE);
+
+    Close(clientfd);
+
+    clientfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (connect(clientfd, (SA *) &servaddr, sizeof(servaddr)) != 0) {
+        printf("connection with the server failed...\n");
+        return NULL;
+    }
+
+    if (is_available_cache(server_header) == 0) {
+        printf("\n %s cache unavailable\n ", server_header);
+
+
+        Rio_writen(clientfd, data_buf, MAXLINE);
+
+        memset(data_buf, 0, MAXLINE);
+
+        while (Rio_readn(clientfd, data_buf, MAXLINE) > 0) {
+            Rio_writen(connfd, data_buf, MAXLINE);
+            memset(data_buf, 0, MAXLINE);
+        }
+
+        free(vargp);
+        // 요청 및 데이터 전달 완료 후 clientfd, connfd close
+        Close(clientfd);
+        Close(connfd);
+
+        return NULL;
+    }
+
     // 서버로 요청 전송 및 응답 데이터 저장
     request_to_server(clientfd, data_buf, &cache_size);
 
-
-    // 캐싱 가능한 대상인지 확인 후, 캐싱 가능하다면 캐시에 추가해줌
+    // 제대로 된 데이터가 들어왔는지 확인
     if (0 < cache_size) {
         put_cache(cache_pool, key, data_buf, cache_size);
     }
@@ -193,7 +228,7 @@ void *deliver(void *vargp) {
 }
 
 // header 를 만들어주는 generate_header 함수
-void generate_header(char *buf, char *method, char *hostname, char *filename, rio_t *rp) {
+void generate_header(char *buf, char *method, char *hostname, char *filename, rio_t *rp, char *head_header) {
     char tmp_buf[MAXLINE];
 
     memset(tmp_buf, 0, MAXLINE);
@@ -203,11 +238,17 @@ void generate_header(char *buf, char *method, char *hostname, char *filename, ri
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sProxy-Connection: close\r\n", buf);
 
+    // head 요청을 위한 header 생성
+
+    sprintf(head_header, "%s %s %s\r\n", "HEAD", filename, STATIC_HTTP_VER);
+    sprintf(head_header, "%s%s\r\n", head_header, user_agent_hdr);
+    sprintf(head_header, "%sConnection: close\r\n", head_header);
+    sprintf(head_header, "%sProxy-Connection: close\r\n", head_header);
+
     int host_flag = 0;
 
     while (strcmp(tmp_buf, "\r\n")) {
         Rio_readlineb(rp, tmp_buf, MAXLINE);
-        print_log("날아온 헤더들2", tmp_buf);
         if (strcasestr(tmp_buf, "GET") || strcasestr(tmp_buf, "HEAD") || strcasestr(tmp_buf, "User-Agent") ||
             strcasestr(tmp_buf, "Connection") || strcasestr(tmp_buf, "Proxy-Connection")) {
             continue;
@@ -215,11 +256,13 @@ void generate_header(char *buf, char *method, char *hostname, char *filename, ri
             host_flag++;
         }
         strcat(buf, tmp_buf);
+        strcat(head_header, tmp_buf);
     }
 
     // 호스트가 없으면 hostname 을 추가해줌
     if (!host_flag) {
         sprintf(buf, "%sHost: %s", buf, hostname);
+        sprintf(buf, "%sHost: %s", head_header, hostname);
     }
 
     strcat(buf, "\r\n");
@@ -227,6 +270,7 @@ void generate_header(char *buf, char *method, char *hostname, char *filename, ri
 
 // server 로 request 를 보내는 request_to_server 함수
 void request_to_server(int clientfd, char *buf, ssize_t *data_size) {
+
     Rio_writen(clientfd, buf, MAXLINE);
 
     memset(buf, 0, MAXLINE);
@@ -361,7 +405,7 @@ int is_available_cache(char *data) {
 
     // content_length와 MAX_OBJECT_SIZE를 비교하여 캐시의 크기 제한을 확인
     if (content_length <= MAX_OBJECT_SIZE) {
-        return content_length;
+        return 1;
     } else {
         return 0;
     }
