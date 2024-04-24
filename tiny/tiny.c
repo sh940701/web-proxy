@@ -101,8 +101,6 @@ void doit(int fd) {
         }
         serve_dynamic(fd, filename, cgiargs, method);
     }
-
-    memset()
 }
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg) {
@@ -257,7 +255,6 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, char *method) {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     // response header 의 첫 부분 return
-
     sprintf(buf, "HTTP/1.0 200 OK\r\n");
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Server: Tiny Web Server\r\n");
