@@ -1,0 +1,20 @@
+<html>
+<script>
+    function adder() {
+        arg1 = document.getElementById('num1').value
+        arg2 = document.getElementById('num2').value
+        document.location = '/cgi-bin/adder?' + arg1 + '&' + arg2;
+    }
+</script>
+<head>
+    <title>11.10</title>
+</head>
+<body>
+<label>Add two numbers</label>
+<br/>
+<br/>
+<input id="num1" type="text" placeholder="num1">
+<input id="num2" type="text" placeholder="num2">
+<button onclick="adder()">Submit</button>
+</body>
+</html>
